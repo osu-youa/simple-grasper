@@ -59,6 +59,7 @@ if __name__ == '__main__':
     rospy.Service('stop_recording', Empty, stop_recording)
 
     # Add your interesting topics here
+    # TODO: You may consider throttling these topics (i.e. creating a throttled version of the node and subscribing to the throttled node)
     add_subscriber('wrench', WrenchStamped)
     add_subscriber('joint_states', JointState)
 

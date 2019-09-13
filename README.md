@@ -3,6 +3,14 @@ How to use:
   as well as a freedrive node which can be commanded by other scripts
 - Run perform_grasp.py, which moves the arm back linearly
 
+For an example of how to analyze the resulting pickle files, run the
+analyze_results.py file with a generated file (e.g. rosrun apple_grasper
+analyze_results.py grasper_20190913151006.pickle)
+
+<b>Be warned!</b> The current trajectory is done using an IK solver
+which I randomly found online; this could result in weird movement near
+singularities. <b>KEEP YOUR HAND ON THE RED BUTTON AT ALL TIMES!</b>
+
 <h2>Troubleshooting</h2>
 
 - <b>I'm trying to run the grasp script, but the robot isn't
