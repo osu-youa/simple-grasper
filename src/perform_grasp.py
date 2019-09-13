@@ -24,6 +24,7 @@ import actionlib
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
 from trajectory_msgs.msg import JointTrajectoryPoint, JointTrajectory
 import sys
+from std_srvs.srv import Empty
 
 ERROR = 0
 
@@ -61,6 +62,9 @@ def point_to_array(pt):
 
 def quat_to_array(quat):
     return np.array([quat.x, quat.y, quat.z, quat.w])
+
+def tare_force():
+    urscript_pub.publish('zero_ftsensor()\n')
 
 # def issue_linear_velocity_command(array):
 #     array_str = format_array_decimal(array)
@@ -179,6 +183,9 @@ if __name__ == '__main__':
         rospy.signal_shutdown(msg)
         sys.exit(1)
 
+    start_recording = rospy.ServiceProxy('start_recording', Empty)
+    stop_recording = rospy.ServiceProxy('stop_recording', Empty)
+
     # Frames - THESE FRAMES SHOULD NOT BE CHANGED because the kinematics solver assumes these references
     base_link = 'base'
     end_link = 'tool0'
@@ -219,11 +226,20 @@ if __name__ == '__main__':
     joint_start = rospy.wait_for_message('/joint_states', JointState)
     goal = convert_poses_to_trajectory(interpolated_poses, joint_start, vel)
 
+    # Pre-grasp preparation
+    tare_force()
+    rospy.sleep(1.0)
+    start_recording()
+
     # You probably want your grasping function here
     grasp = lambda: None
     grasp()
 
     # Send the trajectory to the server
-    traj_client.send_goal_and_wait(goal, goal.trajectory.points[-1].time_from_start * 2)
+    try:
+        traj_client.send_goal_and_wait(goal, goal.trajectory.points[-1].time_from_start * 2)
+    finally:
+        issue_stop()
 
-    # TODO: While the trajectory is being sent, record data from the desired topics
+    # Final stuff
+    stop_recording()
