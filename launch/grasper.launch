@@ -1,0 +1,9 @@
+<launch>
+    <arg name="ip" />
+
+    <include file="$(find ur_modern_driver)/launch/ur5e_bringup.launch">
+        <arg name="robot_ip" value="$(arg ip)" />
+    </include>
+    <node name="freedrive_node" pkg="apple_grasper" type="freedrive_node.py" output="screen" />
+
+</launch>
