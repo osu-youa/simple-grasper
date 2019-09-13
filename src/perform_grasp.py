@@ -28,6 +28,15 @@ from std_srvs.srv import Empty
 
 ERROR = 0
 
+# Config - These define the motion to be completed. You can modify this, but if you want multiple options, you may
+# want to modify the code to take it through a sys.argv
+# (e.g. running it like "rosrun apple_grasper perform_grasp.py 0.05 0.20
+retreat_dist = 0.05                 # How far back does the arm move? + means backwards
+rotation = radians(20)              # How much should the end effector rotate? Currently assumes around Z axis
+vel = 0.04                          # What's the speed the arm should move?
+interp_N = 20                       # How many points should be interpolated for the trajectory?
+sum_abs_radian_warn = radians(10)   # If any total movement exceeds this amount, issue a warning
+
 def update_error(msg):
     global ERROR
     ERROR = msg.in_error.val
@@ -132,7 +141,7 @@ def convert_mat_to_pose(mat):
     pos = Point(mat[0,3], mat[1,3], mat[2,3])
     return Pose(pos, quat)
 
-def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway = 2.0):
+def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway = 2.0, warn_threshold = 0):
 
 
     last_joints = initial_joint_state.position
@@ -149,6 +158,8 @@ def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway =
     believed_pos = point_to_array(urkin.fwd_kin(last_joints, o_unit='p').position)
     correction = believed_pos - point_to_array(poses[0].position)
 
+    joints = [last_joints]
+
     t = 0.0
     for pose in poses:
 
@@ -161,6 +172,15 @@ def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway =
 
         last_joints = new_joints
         last_pos = new_pos
+
+        joints.append(new_joints)
+
+    if warn_threshold > 0:
+        joints = np.array(joints)
+        sum_abs_diff = np.abs(joints[:-1] - joints[1:]).sum(axis=1)
+        if np.any(sum_abs_diff > warn_threshold):
+            rospy.logwarn('Detected a large joint movement! Either near singularity or need to increase path resolution')
+            sys.exit(1)
 
     goal = FollowJointTrajectoryGoal()
     goal.trajectory = traj
@@ -190,13 +210,7 @@ if __name__ == '__main__':
     base_link = 'base'
     end_link = 'tool0'
 
-    # Config - These define the motion to be completed. You can modify this, but if you want multiple options, you may
-    # want to modify the code to take it through a sys.argv
-    # (e.g. running it like "rosrun apple_grasper perform_grasp.py 0.05 0.20
-    retreat_dist = 0.05             # How far back does the arm move? + means backwards
-    rotation = radians(20)          # How much should the end effector rotate? Currently assumes around Z axis
-    vel = 0.04                      # What's the speed the arm should move?
-    interp_N = 20                   # How many points should be interpolated for the trajectory?
+
 
     # # Uncomment this section to allow freedriving the arm
     # # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
@@ -224,7 +238,7 @@ if __name__ == '__main__':
 
     # Convert the poses into a trajectory which can be received by the action client
     joint_start = rospy.wait_for_message('/joint_states', JointState)
-    goal = convert_poses_to_trajectory(interpolated_poses, joint_start, vel)
+    goal = convert_poses_to_trajectory(interpolated_poses, joint_start, vel, warn_threshold=sum_abs_radian_warn)
 
     # Pre-grasp preparation
     tare_force()
