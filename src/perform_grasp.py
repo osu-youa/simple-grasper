@@ -8,11 +8,11 @@ import kinematics as urkin
 # from ur_kin_py import forward, inverse
 from std_msgs.msg import String
 from industrial_msgs.msg import RobotStatus
-from geometry_msgs.msg import Pose, Point, Quaternion, TwistStamped
-from tf.transformations import euler_from_quaternion, quaternion_from_euler, quaternion_slerp, euler_from_matrix, quaternion_from_matrix
+from geometry_msgs.msg import Pose, Point, Quaternion, TwistStamped, TransformStamped, Transform
+from tf.transformations import euler_from_quaternion, quaternion_from_euler, quaternion_slerp, euler_from_matrix, quaternion_from_matrix, euler_matrix, quaternion_matrix
 import numpy as np
 from nav_msgs.msg import Path
-from geometry_msgs.msg import PoseStamped, Point
+from geometry_msgs.msg import PoseStamped, Point, Vector3
 from collections import defaultdict
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
@@ -37,10 +37,21 @@ vel = 0.04                          # What's the speed the arm should move?
 interp_N = 20                       # How many points should be interpolated for the trajectory?
 sum_abs_radian_warn = radians(10)   # If any total movement exceeds this amount, issue a warning
 
+# Frames
+# THESE FRAMES SHOULD NOT BE CHANGED because the kinematics solver assumes these references
+ur_base_link = 'base'
+ur_end_link = 'tool0'
+
+# THESE FRAMES CAN BE CHANGED as they are not bound to the UR5 program code
+tool_frame = 'test_frame'                   # What is the frame you're trying to move?
+                                            # IMPORTANT! THIS FRAME MUST BE STATIC w.r.t. ur_end_link
+movement_frame = 'base_link'                # What frame is the movement/rotation vector defined in?
+movement_vector = [0, -retreat_dist, 0]     # What's the linear movement you want in the movement frame?
+movement_rpy = [0, 0, rotation]             # What's the rotation you want in the movement frame, centered around tool_frame's origin?
+
 def update_error(msg):
     global ERROR
     ERROR = msg.in_error.val
-
 
 # def generate_ur_pose(pose):
 #     quat = pose.orientation
@@ -94,6 +105,13 @@ def issue_stop():
 #     return format_str.format(cmd, ur_pose, a, v, t)
 
 def ros_pose_slerp(start, end, n):
+
+    frame = None
+    if isinstance(start, PoseStamped):
+        frame = start.header.frame_id
+        start = start.pose
+        end = end.pose
+
     start_pos = point_to_array(start.position)
     end_pos = point_to_array(end.position)
 
@@ -101,6 +119,11 @@ def ros_pose_slerp(start, end, n):
     quats = [quaternion_slerp(quat_to_array(start.orientation), quat_to_array(end.orientation), i) for i in np.linspace(0, 1, n, endpoint=True)]
 
     poses = [Pose(Point(*pos), Quaternion(*quat)) for pos, quat in zip(positions, quats)]
+    if frame is not None:
+        header = Header()
+        header.frame_id = frame
+        poses_stamped = [PoseStamped(header, pose) for pose in poses]
+        return poses_stamped
     return poses
 
 
@@ -140,6 +163,24 @@ def convert_mat_to_pose(mat):
     quat = Quaternion(*quaternion_from_matrix(mat))
     pos = Point(mat[0,3], mat[1,3], mat[2,3])
     return Pose(pos, quat)
+
+def convert_tf_to_pose(tf):
+    pose = PoseStamped()
+    pose.pose = Pose(Point(*point_to_array(tf.transform.translation)), tf.transform.rotation)
+    pose.header.frame_id = tf.header.frame_id
+
+    return pose
+
+def convert_pose_to_tf(pose_stamped, frame_id):
+    # frame_id is the ID of the frame which is located at the pose in the given frame
+    tf = TransformStamped()
+    tf.header.frame_id = frame_id
+    tf.child_frame_id = pose_stamped.header.frame_id
+    tf.transform.translation = Vector3(*point_to_array(pose_stamped.pose.position))
+    tf.transform.rotation = pose_stamped.pose.orientation
+
+    return tf
+
 
 def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway = 2.0, warn_threshold = 0):
 
@@ -206,12 +247,6 @@ if __name__ == '__main__':
     start_recording = rospy.ServiceProxy('start_recording', Empty)
     stop_recording = rospy.ServiceProxy('stop_recording', Empty)
 
-    # Frames - THESE FRAMES SHOULD NOT BE CHANGED because the kinematics solver assumes these references
-    base_link = 'base'
-    end_link = 'tool0'
-
-
-
     # # Uncomment this section to allow freedriving the arm
     # # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
     # rospy.set_param('freedrive', True)
@@ -221,24 +256,39 @@ if __name__ == '__main__':
 
     # Get the current location of the end effector
     stamp = rospy.Time.now()
-    ee_base_offset = get_tf(base_link, end_link, stamp)
 
-    # Define a vector relative to the end effector frame which is your final position, and transform it into the world
-    desired_linear = Point(0, 0, -retreat_dist)
-    desired_angular = Quaternion(*quaternion_from_euler(0, 0, rotation))
-    desired_final_pose = PoseStamped()
-    desired_final_pose.header.frame_id = end_link
-    desired_final_pose.pose = Pose(desired_linear, desired_angular)
-    world_final_pose = do_transform_pose(desired_final_pose, ee_base_offset)
+    tool_to_ur_base_tf = get_tf(ur_base_link, tool_frame, stamp)
+    movement_to_ur_base_tf = get_tf(ur_base_link, movement_frame, stamp)
+    static_tool_to_ur_ee_pose = convert_tf_to_pose(get_tf(ur_end_link, tool_frame, stamp))
+    tool_to_rotation_tf = get_tf(movement_frame, tool_frame, stamp)
 
-    # Generate the list of interpolated poses
-    start_pt = point_to_array(ee_base_offset.transform.translation)
-    start_rot = ros_quat_to_euler(ee_base_offset.transform.rotation)
-    interpolated_poses = ros_pose_slerp(Pose(Point(*start_pt), ee_base_offset.transform.rotation), world_final_pose.pose, interp_N)
+    # Define a pose in the movement frame whose origin is at the current tool frame's origin (in the movement frame)
+    # plus any desired movement, and the rotation is the desired rotation
+
+    tool_origin = point_to_array(tool_to_rotation_tf.transform.translation)
+
+    # TODO: This desired movement should be fine tuned to whatever application you need
+    # Right now it just assumes a negative z movement, but in reality it can be whatever you need
+    desired_movement = PoseStamped()
+    desired_movement.header.frame_id = movement_frame
+    desired_movement.pose.position = Point(*tool_origin + np.array(movement_vector))
+    # Kinda hacky, sorry
+    desired_rotation_mat = euler_matrix(*movement_rpy)      # THIS IS WHERE YOUR DESIRED ROTATION GOES
+    o = tool_to_rotation_tf.transform.rotation
+    composite_rotation = desired_rotation_mat.dot(quaternion_matrix([o.x, o.y, o.z, o.w]))
+    desired_movement.pose.orientation = Quaternion(*quaternion_from_matrix(composite_rotation))
+
+    current_tool_pose = convert_tf_to_pose(tool_to_ur_base_tf)
+    final_tool_pose = do_transform_pose(desired_movement, movement_to_ur_base_tf)
+
+    # Each pose in the interpolated poses actually represents an orientation of the frame relative to the offset
+    # Therefore you are transforming a static offset in the tool frame with a variable transform
+    interp_poses = ros_pose_slerp(current_tool_pose, final_tool_pose, interp_N)
+    interpolated_tool_poses = [do_transform_pose(static_tool_to_ur_ee_pose, convert_pose_to_tf(pose, static_tool_to_ur_ee_pose.header.frame_id)).pose for pose in interp_poses]
 
     # Convert the poses into a trajectory which can be received by the action client
     joint_start = rospy.wait_for_message('/joint_states', JointState)
-    goal = convert_poses_to_trajectory(interpolated_poses, joint_start, vel, warn_threshold=sum_abs_radian_warn)
+    goal = convert_poses_to_trajectory(interpolated_tool_poses, joint_start, vel, warn_threshold=sum_abs_radian_warn)
 
     # Pre-grasp preparation
     tare_force()

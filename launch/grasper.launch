@@ -1,6 +1,7 @@
 <launch>
     <arg name="ip" />
 
+    <node name="test_tf" pkg="tf" type="static_transform_publisher" args="0 0 0.10 0 0 0 1 tool0 test_frame 10"/>
     <include file="$(find ur_modern_driver)/launch/ur5e_bringup.launch">
         <arg name="robot_ip" value="$(arg ip)" />
     </include>
