@@ -25,6 +25,7 @@ from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryG
 from trajectory_msgs.msg import JointTrajectoryPoint, JointTrajectory
 import sys
 from std_srvs.srv import Empty
+from rosserial_arduino.srv import Test
 
 ERROR = 0
 
@@ -34,7 +35,7 @@ ERROR = 0
 retreat_dist = 0.05                 # How far back does the arm move? + means backwards
 rotation = radians(20)              # How much should the end effector rotate? Currently assumes around Z axis
 vel = 0.04                          # What's the speed the arm should move?
-interp_N = 20                       # How many points should be interpolated for the trajectory?
+interp_N = 20                  # How many points should be interpolated for the trajectory?
 sum_abs_radian_warn = radians(10)   # If any total movement exceeds this amount, issue a warning
 
 # Frames
@@ -45,7 +46,7 @@ ur_end_link = 'tool0'
 # THESE FRAMES CAN BE CHANGED as they are not bound to the UR5 program code
 tool_frame = 'test_frame'                   # What is the frame you're trying to move?
                                             # IMPORTANT! THIS FRAME MUST BE STATIC w.r.t. ur_end_link
-movement_frame = 'base_link'                # What frame is the movement/rotation vector defined in?
+movement_frame = 'base_link'                # What frame is the movement/rotation vector defined in? base_link
 movement_vector = [-retreat_dist, 0, 0]     # What's the linear movement you want in the movement frame?
 movement_rpy = [0, 0, rotation]             # What's the rotation you want in the movement frame, centered around tool_frame's origin?
 
@@ -53,23 +54,6 @@ movement_rpy = [0, 0, rotation]             # What's the rotation you want in th
 def update_error(msg):
     global ERROR
     ERROR = msg.in_error.val
-
-# def generate_ur_pose(pose):
-#     quat = pose.orientation
-#     rx, ry, rz = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-#     x, y, z = pose.position.x, pose.position.y, pose.position.z
-#     format_str = 'p[{}]'.format(','.join(['{:.3f}'] * 6))
-#     return format_str.format(x, y, z, rx, ry, rz)
-
-# def format_array(array):
-#
-#     values = ','.join(['{}'.format(x) for x in array])
-#     return '[{}]'.format(values)
-#
-#
-# def format_array_decimal(array):
-#     values = ','.join(['{:.2f}'.format(x) for x in array])
-#     return '[{}]'.format(values)
 
 
 def get_tf(target, source, stamp = rospy.Time(0)):
@@ -90,24 +74,10 @@ def quat_to_array(quat):
 def tare_force():
     urscript_pub.publish('zero_ftsensor()\n')
 
-# def issue_linear_velocity_command(array):
-#     array_str = format_array_decimal(array)
-#     rospy.loginfo_throttle(0.025, array_str)
-#     cmd = "speedl({},-5.0,0.05)\n".format(array_str)
-#     urscript_pub.publish(cmd)
-
 
 def issue_stop():
     cmd = "stopl(50.0)\n"
     urscript_pub.publish(cmd)
-
-# def generate_move_command(pose, a, v, t=0, linear=False):
-#
-#     cmd = 'movel' if linear else 'movej'
-#
-#     ur_pose = generate_ur_pose(pose)
-#     format_str = '{}({}, a={:.3f}, v={:.3f}, t={:.3f}, r=0)'
-#     return format_str.format(cmd, ur_pose, a, v, t)
 
 
 def ros_pose_slerp(start, end, n):
@@ -131,25 +101,6 @@ def ros_pose_slerp(start, end, n):
         poses_stamped = [PoseStamped(header, pose) for pose in poses]
         return poses_stamped
     return poses
-
-
-# def run_force_mode(pose, selection_vector, wrench, limits):
-#     """
-#     Refer to the URScript manual for the definitions of each of the arguments.
-#     :param pose: A ROS pose defining a frame in which the forces are defined.
-#     :param selection_vector: A Boolean array which specifies compliant axes.
-#     :param wrench: A vector for the wrench to be applied for each axis.
-#     :param limits: For compliant axes, a velocity limit. For non-compliant axes, an absolute position limit deviation.
-#     :return:
-#     """
-#
-#     ur_pose = generate_ur_pose(pose)
-#     selection_vector = format_array(np.array(selection_vector).astype(bool).astype(int))
-#     wrench = format_array_decimal(wrench)
-#     limits = format_array_decimal(limits)
-#
-#     cmd = 'force_mode({}, {}, {}, 2, {})\nsync()\n'.format(ur_pose, selection_vector, wrench, limits)
-#     urscript_pub.publish(cmd)
 
 
 def ros_quat_to_euler(q):
@@ -221,7 +172,7 @@ def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway =
 
         joints.append(new_joints)
 
-    # if warn_threshold > 0:   # LMD
+    # if warn_threshold > 0:            # LMD found that this blocked many if not all positions, thus negated the check
     #     joints = np.array(joints)
     #     sum_abs_diff = np.abs(joints[:-1] - joints[1:]).sum(axis=1)
     #     if np.any(sum_abs_diff > warn_threshold):
@@ -234,13 +185,65 @@ def convert_poses_to_trajectory(poses, initial_joint_state, linear_vel, leeway =
     return goal
 
 
-def freedriveMode():
-    # temprary time to freedrive the system to a spot and to check if it is nnot near any singularities
-    # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
-    rospy.set_param('freedrive', True)
-    raw_input('Please freedrive the arm to the desired grasping position, then hit Enter')
-    rospy.set_param('freedrive', False)
-    rospy.sleep(1.0)
+####################
+# Move_arm functions
+####################
+def generate_ur_pose(pose):
+    quat = pose.orientation
+    rx, ry, rz = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
+    x, y, z = pose.position.x, pose.position.y, pose.position.z
+    format_str = 'p[{}]'.format(','.join(['{:.3f}'] * 6))
+    return format_str.format(x, y, z, rx, ry, rz)
+
+def generate_move_command(pose, a, v, t=0):
+    ur_pose = generate_ur_pose(pose)
+    format_str = 'movej({}, a={:.3f}, v={:.3f}, t={:.3f}, r=0)'
+    return format_str.format(ur_pose, a, v, t)
+
+def wait_for_motion_to_complete():
+
+    # Kind of a hack, couldn't figure out a quick way to get the UR5 move status
+
+    rate = rospy.Rate(10)
+    epsilon = 0.001
+
+    rospy.sleep(0.5)
+
+    while True:
+        twist = rospy.wait_for_message('tool_velocity', TwistStamped)
+        lin = twist.twist.linear
+        ang = twist.twist.angular
+
+        lin_array = np.array([lin.x, lin.y, lin.z])
+        ang_array = np.array([ang.x, ang.y, ang.z])
+
+        if np.linalg.norm(lin_array) < epsilon and np.linalg.norm(ang_array) < epsilon:
+            break
+        rate.sleep()
+
+
+#################################################
+# LMD Functionality
+#################################################
+
+def Move2Tare():
+    # move to the tare position
+
+    tare_pose = Pose(Point(0.45, 0.3, 0.6), Quaternion(0, 0, 0, 1))
+    cmd = generate_move_command(tare_pose, 1.0, 0.25)
+    urscript_pub.publish(cmd)
+    wait_for_motion_to_complete()
+
+    # send signal to arduino to initialize the IMU at this point
+    rospy.wait_for_service('init_IMU')
+    init_imu_srv = rospy.ServiceProxy('init_IMU', Test)
+    resp = 0
+    while not resp:                         # wait till the IMU responds back that it has initialized
+        resp = init_imu_srv()
+        rospy.sleep(0.25)
+    print(" ")
+    print("IMU has been initialized")
+    print(" ")
 
 
 if __name__ == '__main__':
@@ -260,24 +263,40 @@ if __name__ == '__main__':
         rospy.signal_shutdown(msg)
         sys.exit(1)
 
-    start_recording = rospy.ServiceProxy('start_recording', Empty)
-    stop_recording = rospy.ServiceProxy('stop_recording', Empty)
+    start_recording = rospy.ServiceProxy('start_recording', Empty, persistent=True)
+    stop_recording = rospy.ServiceProxy('stop_recording', Empty, persistent=True)
 
-    # Uncomment this section to allow freedriving the arm
-    freedriveMode()
-    # # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
-    # rospy.set_param('freedrive', True)
-    # raw_input('Please freedrive the arm to the desired grasping position, then hit Enter')
+    # Move to the Tare position and initialize the IMU
+    Move2Tare()
+
+    # Free drive to the apple location
+    # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
+    rospy.set_param('freedrive', True)
+    raw_input('Please freedrive the arm to the desired grasping position, then hit Enter')
     # rospy.set_param('freedrive', False)
     # rospy.sleep(1.0)
 
+    # Gather Pose and save
+
+    # Free drive a bit back from the apple and then return to the tare spot
+    raw_input('Please move the arm back a bit from the apple, then hit Enter')
+    rospy.set_param('freedrive', False)
+    rospy.sleep(1.0)
+    Move2Tare()
+
+    # Send service request to open up the hand to neutral position
+
+    # Send service request to initialize the IMU
+
+    # Start to collect Data
+    start_recording()
+
     # Get the current location of the end effector
     stamp = rospy.Time.now()
-
     tool_to_ur_base_tf = get_tf(ur_base_link, tool_frame, stamp)
-    movement_to_ur_base_tf = get_tf(ur_base_link, movement_frame, stamp)                        # ee_tf; LMD
+    movement_to_ur_base_tf = get_tf(ur_base_link, movement_frame, stamp)
     static_tool_to_ur_ee_pose = convert_tf_to_pose(get_tf(ur_end_link, tool_frame, stamp))
-    tool_to_rotation_tf = get_tf(movement_frame, tool_frame, stamp)                             # if movement=ee, then this is static
+    tool_to_rotation_tf = get_tf(movement_frame, tool_frame, stamp)
 
     # Define a pose in the movement frame whose origin is at the current tool frame's origin (in the movement frame)
     # plus any desired movement, and the rotation is the desired rotation
@@ -295,8 +314,11 @@ if __name__ == '__main__':
     composite_rotation = desired_rotation_mat.dot(quaternion_matrix([o.x, o.y, o.z, o.w]))
     desired_movement.pose.orientation = Quaternion(*quaternion_from_matrix(composite_rotation))
 
-    current_tool_pose = convert_tf_to_pose(tool_to_ur_base_tf)
-    final_tool_pose = do_transform_pose(desired_movement, movement_to_ur_base_tf)   #
+    print("the desired movement is: {} relative to the {} frame".format(desired_movement, movement_frame))
+    current_tool_pose = convert_tf_to_pose(tool_to_ur_base_tf)              # base_link to tool frame(test_static frame)
+    final_tool_pose = do_transform_pose(desired_movement, movement_to_ur_base_tf)   # base_link to movment_frame(base_link)
+    print("initial pose: {}".format(current_tool_pose))
+    print("Final pose: {}".format(final_tool_pose))
 
     # Each pose in the interpolated poses actually represents an orientation of the frame relative to the offset
     # Therefore you are transforming a static offset in the tool frame with a variable transform
@@ -310,7 +332,8 @@ if __name__ == '__main__':
     # Pre-grasp preparation
     tare_force()
     rospy.sleep(1.0)
-    start_recording()
+
+    # start_recording()
 
     # You probably want your grasping function here
     grasp = lambda: None
@@ -321,6 +344,11 @@ if __name__ == '__main__':
         traj_client.send_goal_and_wait(goal, goal.trajectory.points[-1].time_from_start * 2)
     finally:
         issue_stop()
+
+    # LMD addition
+    final_actual_tool_tf = get_tf(ur_base_link, tool_frame, stamp)
+    final_actual_tool_pose = convert_tf_to_pose(final_actual_tool_tf)
+    print("The final resting position of the tool is: {}".format(final_actual_tool_pose))
 
     # Final stuff
     stop_recording()
