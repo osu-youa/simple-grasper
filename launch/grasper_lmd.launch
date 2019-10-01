@@ -1,0 +1,31 @@
+<launch>
+    <arg name="ip" />
+
+    <param name="~port" value="/dev/ttyACM0" />
+    <param name="~baud" value="57600" />
+
+    <node name="test_tf" pkg="tf" type="static_transform_publisher" args="0 0 0.10 0 0 0 1 tool0 test_frame 10"/>
+
+<!--Uncomment this if you want to see camera feed within RVIZ; the Record data handles -->
+<!--   camera recording; and odly enough that can run at the same time as the rviz viewing-->
+<!--	<include file="$(find realsense2_camera)/launch/rs_camera.launch">-->
+<!--		 <arg name="initial_reset" value="true" />-->
+<!--		 <arg name="enable_infra2" value="false" />-->
+<!--	</include>-->
+    <include file="$(find ur_modern_driver)/launch/ur5e_bringup.launch">
+        <arg name="robot_ip" value="$(arg ip)" />
+    </include>
+
+
+    <node name="freedrive_node" pkg="apple_grasper" type="freedrive_node.py" output="screen" />
+    <node name="record_data" pkg="apple_grasper" type="record_data.py" output="screen" />
+
+    <!--    call this to listen to  the Arduino rosserial-->
+    <node name="rosserial" pkg="rosserial_python" type="serial_node.py" output="screen" />
+
+    <!--    Run the Dynamixel Hand Controller and publish its data-->
+    <node name="Hand_controller" pkg="apple_grasper" type="Dyn_torque_control.py" output="screen" />
+
+
+
+</launch>
