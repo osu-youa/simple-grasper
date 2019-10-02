@@ -3,6 +3,7 @@
 
     <param name="~port" value="/dev/ttyACM0" />
     <param name="~baud" value="57600" />
+    <param name="tf2pub" value="tare_tf apple_nom_tf" />
 
     <node name="test_tf" pkg="tf" type="static_transform_publisher" args="0 0 0.10 0 0 0 1 tool0 test_frame 10"/>
 
@@ -24,8 +25,7 @@
     <node name="rosserial" pkg="rosserial_python" type="serial_node.py" output="screen" />
 
     <!--    Run the Dynamixel Hand Controller and publish its data-->
-    <node name="Hand_controller" pkg="apple_grasper" type="Dyn_torque_control.py" output="screen" />
-
+    <node name="Hand_controller" pkg="apple_grasper" type="Dyn_services.py" output="screen" />
 
 
 </launch>
