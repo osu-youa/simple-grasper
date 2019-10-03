@@ -81,6 +81,8 @@ dxl_goal_position = [DXL_MINIMUM_POSITION_VALUE, DXL_MAXIMUM_POSITION_VALUE]    
 #flags
 f_open = False                          # setting this true will open the hand, should oly be done through service request
 f_close = False                         # service request sets to true when it is desired to close the the hand
+f_startUp = False
+f_shutdown = False
 
 # experiment settings
 debug = False                           # set to true if you want to read directly from the readings
@@ -93,6 +95,7 @@ pos_array = [2500, 1000, 0, 0]          # desired finger final positions
 # for 0-1,023, CCW torque is applied; for 1,024 ~ 2,047, CW torque is applied. Setting it to 0 or 1,024 will stop.
 vel_array = [200, 200, 200, 200]            # desired finger speed; will increase torque to try to maintain that speed
 tor_array = [100, 100, 100, 100]            # desired finger torques, x/1023 is the percentage of max set torque to run
+vel_array_back = [1324, 1324, 1324, 1324]   # Used to open the hand back up, this is the sae speed as before, just in the op. direction
 torque_run_time = 1                    # run time duration to run at those torques
 
 ##########################################################
@@ -258,13 +261,16 @@ class Dynamixel_servo():
                 print("At addr:{} we found {}".format(addr, data))
 
     def check_for_response(self, result, error, location):
+        global debug
         if result != self.COMM_SUCCESS:
-            print("from {}".format(location))
-            print("%s" % PacH.getTxRxResult(result))
+            if debug:
+                print("from {}".format(location))
+                print("%s" % PacH.getTxRxResult(result))
             return 1
         elif error != 0:
-            print("from {}".format(location))
-            print("%s" % PacH.getRxPacketError(error))
+            if debug:
+                print("from {}".format(location))
+                print("%s" % PacH.getRxPacketError(error))
             return 1
         else:
             return 0
@@ -422,11 +428,12 @@ def publish_func(event):
 
 
 def open_hand(request):
-        """ This sets the global flag that triggers the openeing of the hand """
-        global f_open
-        print("Open the hand")
-        f_open = True
-        return TriggerResponse(success = True, message = "merhhhh")
+    """ This sets the global flag that triggers the openeing of the hand """
+    global f_open, f_close
+    print("Open the hand")
+    f_open = True
+    f_close = False                     # we set it to false here because we want to stay closed until the open command is set
+    return TriggerResponse(success = True, message = "merhhhh")
 
 
 def close_hand(request):
@@ -434,6 +441,20 @@ def close_hand(request):
     global f_close
     print("Open the hand")
     f_close = True
+    return TriggerResponse(success=True, message="merhhhh")
+
+def start_up(request):
+    """ This sets the global flag that triggers the closeing and grasping of the hand """
+    global f_startUp
+    print("disabling torque")
+    f_startUp = True
+    return TriggerResponse(success=True, message="merhhhh")
+
+def shutdown(request):
+    """ This sets the global flag that triggers the closeing and grasping of the hand """
+    global f_shutdown
+    print("disabling torque")
+    f_shutdown = True
     return TriggerResponse(success=True, message="merhhhh")
 
 
@@ -491,17 +512,19 @@ if __name__ == '__main__':
     rospy.sleep(2)
 
     # setup the services
-    tare_service = rospy.Service('/open_hand', Trigger, open_hand)
-    tare_service = rospy.Service('/close_hand', Trigger, close_hand)
+    open_service = rospy.Service('/open_hand', Trigger, open_hand)
+    close_service = rospy.Service('/close_hand', Trigger, close_hand)
+    shutdown_service = rospy.Service('/shutdown', Trigger, shutdown)
+    init_service = rospy.Service('/enable', Trigger, start_up)
 
     # Set-up Publisher ISR
     rospy.Timer(rospy.Duration(1), publish_func)            # currently functions at 1 hz
 
     while not rospy.is_shutdown():
         if f_open:              # set to true when there was a service call to open the hand
-            ID_1.Finger_Reset()
-            ID_2.Finger_Reset()
-            ID_4.Finger_Reset()
+            ID_1.runTorque(tor_array[0], vel_array_back[0])
+            ID_2.runTorque(tor_array[1], vel_array_back[1])
+            ID_4.runTorque(tor_array[3], vel_array_back[3])
             f_open = False
 
         if f_close:             # close the hand
@@ -509,10 +532,17 @@ if __name__ == '__main__':
             ID_2.runTorque(tor_array[1], vel_array[1])
             ID_4.runTorque(tor_array[3], vel_array[3])
 
-            #rospy.sleep(torque_run_time)               # we want to run indefinitly until the command to open
-
+        if f_startUp:
             # End each servo torque
-            # ID_1.DisableTorque()
-            # ID_2.DisableTorque()
-            # # ID_3.DisableTorque()
-            # ID_4.DisableTorque()
+            ID_1.EnableTorque()
+            ID_2.EnableTorque()
+            ID_4.EnableTorque()
+            f_startUp = False
+
+        if f_shutdown:
+            # End each servo torque
+            ID_1.DisableTorque()
+            ID_2.DisableTorque()
+            # ID_3.DisableTorque()
+            ID_4.DisableTorque()
+            f_shutdown = False

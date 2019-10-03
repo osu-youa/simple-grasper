@@ -89,7 +89,8 @@ pos_array = [2500, 1000, 0, 0]          # desired finger final positions
 # for 0-1,023, CCW torque is applied; for 1,024 ~ 2,047, CW torque is applied. Setting it to 0 or 1,024 will stop.
 vel_array = [200, 200, 200, 200]            # desired finger speed; will increase torque to try to maintain that speed
 tor_array = [100, 100, 100, 100]            # desired finger torques, x/1023 is the percentage of max set torque to run
-torque_run_time = 1                    # run time duration to run at those torques
+vel_array_back = [1324, 1324, 1324, 1324]            # desired finger torques, x/1023 is the percentage of max set torque to run
+torque_run_time = 8                    # run time duration to run at those torques
 
 ##########################################################
 
@@ -191,6 +192,7 @@ class Dynamixel_servo():
 
     def Finger_Reset(self):                 # Reset to original position
         global DXL_MINIMUM_POSITION_VALUE
+        self.reset_mode()                           # make sure we are not in wheel mode so that we can drive to positon
         self.Move(DXL_MINIMUM_POSITION_VALUE)
         val = 0
         while not val:
@@ -478,10 +480,11 @@ if __name__ == '__main__':
     # ID_3.Finger_Reset()
     ID_4.Finger_Reset()
 
-    rospy.sleep(2)
+    rospy.sleep(1)
 
     # Set-up Publisher ISR
     rospy.Timer(rospy.Duration(1), publish_func)            # currently functions at 1 hz
+
 
     # Set goal positions
     if position:
@@ -505,13 +508,21 @@ if __name__ == '__main__':
         print("Press any key to continue Torque run! (or press ESC to quit!)")
         if getch() == chr(0x1b):
             exit()
+        for i in range(2):
+            ID_1.runTorque(tor_array[0], vel_array[0])
+            ID_2.runTorque(tor_array[1], vel_array[1])
+            # ID_3.runTorque(tor_array[2], vel_array[2])
+            ID_4.runTorque(tor_array[3], vel_array[3])
 
-        ID_1.runTorque(tor_array[0], vel_array[0])
-        ID_2.runTorque(tor_array[1], vel_array[1])
-        # ID_3.runTorque(tor_array[2], vel_array[2])
-        ID_4.runTorque(tor_array[3], vel_array[3])
+            rospy.sleep(torque_run_time)
 
-        rospy.sleep(torque_run_time)
+            print("opening hand")
+            ID_1.runTorque(tor_array[0], vel_array_back[0])
+            ID_2.runTorque(tor_array[1], vel_array_back[1])
+            ID_4.runTorque(tor_array[3], vel_array_back[3])
+
+            rospy.sleep(3)
+
 
     # Close each servo torque
     ID_1.DisableTorque()

@@ -20,8 +20,6 @@ from std_srvs.srv import Empty
 from rosserial_arduino.srv import Test
 from std_srvs.srv import Trigger, TriggerRequest
 import UR5Motion_functions as UR5
-from publisher import MyPublisher
-from copy import deepcopy
 
 ERROR = 0
 
@@ -260,34 +258,20 @@ def issue_stop():
 
 def Move2Tare():
     # move to the tare position
+
     tare_pose = Pose(Point(0.45, 0.3, 0.6), Quaternion(0, 0, 0, 1))
     cmd = UR5.generate_move_command(tare_pose, 1.0, 0.25)
-    urscript_pub.publish(cmd)
-    UR5.wait_for_motion_to_complete()
-
-def Move2Pose():
-    # move the desired pose, no control of motion, just basic motion
-    # tl = my_tf.transform.translation
-    # pose = PoseStamped()
-    # # header = Header(seq, stamp, frame)
-    # # pose.header = deepcopy(header)
-    # pose.pose.position = Point(tl.x, tl.y, tl.z)
-    # pose.pose.orientation = my_tf.transform.rotation
-
-    pose = Pose(Point(0.55, 0.2, 0.7), Quaternion(0.1, 0.01, 0, 0.99))          # arbitrary set just to create motion
-    cmd = UR5.generate_move_command(pose, 1.0, 0.25)
     urscript_pub.publish(cmd)
     UR5.wait_for_motion_to_complete()
 
 ##################################
 # Hand Functions
 ##################################
-def OpenHand():
+def Hand2NeutralPos():
     # Request the hand to go to the neutral open position
     rospy.wait_for_service('/open_hand')
     tare_service = rospy.ServiceProxy('/open_hand', Trigger)        # Create the connection to the service.
     trig_obj = TriggerRequest()                                     # Create an object of the type TriggerRequest.
-    response = False
     while not response:
         response = tare_service(trig_obj)                           # Now send the request through the connection
 
@@ -297,19 +281,8 @@ def CloseHand():
     rospy.wait_for_service('/close_hand')
     tare_service = rospy.ServiceProxy('/close_hand', Trigger)   # Create the connection to the service.
     trig_obj = TriggerRequest()                                 # Create an object of the type TriggerRequest.
-    response = False
     while not response:
         response = tare_service(trig_obj)                       # Now send the request through the connection
-
-
-def init_hand():
-    # this is only neede when we do not re-start the launch file
-    rospy.wait_for_service('/enable')
-    tare_service = rospy.ServiceProxy('/enable', Trigger)
-    trig_obj = TriggerRequest()
-    response = False
-    while not response:
-        response = tare_service(trig_obj)  # Now send the request through the connection
 
 
 def InitIMU():
@@ -323,6 +296,7 @@ def InitIMU():
     print(" ")
     print("IMU has been initialized")
     print(" ")
+
 
 
 def Go2Pose(goal):
@@ -382,17 +356,8 @@ def Go2Pose(goal):
 
 def RetreatFromPose():
     # match the path taken out to the goal pose and go back to the tare spot
+
     stop_recording()
-
-
-def Shutdown():
-    # send a service to the dynamixels to disable torque
-    rospy.wait_for_service('/shutdown')
-    tare_service = rospy.ServiceProxy('/shutdown', Trigger)
-    trig_obj = TriggerRequest()
-    response = False
-    while not response:
-        response = tare_service(trig_obj)  # Now send the request through the connection
 
 
 if __name__ == '__main__':
@@ -401,8 +366,6 @@ if __name__ == '__main__':
     rospy.init_node('move_arm')
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer)
-    my_pub_data = MyPublisher()
-    rospy.on_shutdown(Shutdown)
 
     rospy.Subscriber('/ur_driver/robot_status', RobotStatus, UR5.update_error, queue_size=1)
     urscript_pub = rospy.Publisher('/ur_driver/URScript', String, queue_size=1)
@@ -418,19 +381,16 @@ if __name__ == '__main__':
     stop_recording = rospy.ServiceProxy('stop_recording', Empty, persistent=True)
 
     # Move to the Tare position
-    print("moving to tare position")
-    rospy.sleep(1.0)
     Move2Tare()
-    rospy.sleep(2)
+    rospy.sleep(5)
 
     # signal for the service to update the Tare_tf
     rospy.wait_for_service('/update_tare')
     tare_service = rospy.ServiceProxy('/update_tare', Trigger)  # Create the connection to the service.
     trig_obj = TriggerRequest()  # Create an object of the type TriggerRequest.
-    response = False
     while not response:
         response = tare_service(trig_obj)  # Now send the request through the connection
-    rospy.sleep(2)
+    rospy.sleep(5)
 
     # Free drive to the apple location
     # TODO: May require sending a stop_freedrive() command to the arm after setting to False - modify freedrive_node.py
@@ -441,47 +401,27 @@ if __name__ == '__main__':
     rospy.wait_for_service('/set_apple_nom')
     tare_service = rospy.ServiceProxy('/set_apple_nom', Trigger)
     trig_obj = TriggerRequest()
-    response = False
     while not response:
         response = tare_service(trig_obj)
-    rospy.sleep(2)
+    rospy.sleep(5)
 
     # Free drive a bit back from the apple and then return to the tare spot
     raw_input('Please move the arm back a bit from the apple, then hit Enter to return home')
     rospy.set_param('freedrive', False)
-    print("moving back to the home Location")
     rospy.sleep(1.0)
     Move2Tare()
-    rospy.sleep(2)
+    rospy.sleep(5)
 
     # Send service request to open up the hand to neutral position
-    OpenHand()
+    Hand2NeutralPos()
 
     # Send service request to initialize the IMU
     InitIMU()
 
-    # Move back out to the nominal apple position
-    print("moving out to the apple")
-    rospy.sleep(1)
-    Move2Pose()
-
-    # Close the hand
-    print("closing and opening the hand")
-    rospy.sleep(2)
-    CloseHand()                         # send service request to close the hand
-    print("opening hand")
-    rospy.sleep(8)
-    OpenHand()                          # now open the hand so that the arm can retreat without effecting the apple
-
-    # retreat back to the tare position
-    print("Going back to the Home position")
-    rospy.sleep(1)
-    Move2Tare()
-
-    # receive user input as to what variant of motion is desired and run that full action
-    # "OG" will run the hand to the original pose
-    # Exit "XX" will run the "XX" variant and will exit this UI loop
-    # "0.5 right" will shift the pose over to the right by 0.5
+    # # receive user input as to what variant of motion is desired and run that full action
+    # # "OG" will run the hand to the original pose
+    # # Exit "XX" will run the "XX" variant and will exit this UI loop
+    # # "0.5 right" will shift the pose over to the right by 0.5
     # loop = True
     # while loop:
     #     if UI.contains("Exit"):
@@ -496,7 +436,6 @@ if __name__ == '__main__':
     #             # OpenHand()                # now open the hand so that the arm can retreat without effecting the apple
     #             i = 47                      # just filler code to make python happy
     #         # RetreatFromPose()
-
 
 
     # # Get the current location of the end effector

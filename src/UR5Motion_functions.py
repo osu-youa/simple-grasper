@@ -203,6 +203,7 @@ def freedriveMode():
 ####################
 # Basic Move_arm functions
 ####################
+
 def generate_ur_pose(pose):
     quat = pose.orientation
     rx, ry, rz = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
@@ -218,7 +219,6 @@ def generate_move_command(pose, a, v, t=0):
 def wait_for_motion_to_complete():
 
     # Kind of a hack, couldn't figure out a quick way to get the UR5 move status
-
     rate = rospy.Rate(10)
     epsilon = 0.001
 

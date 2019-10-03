@@ -9,6 +9,7 @@ from tf import transformations
 import message_filters
 from geometry_msgs.msg import Vector3Stamped
 from math import radians
+import pickle
 
 
 class MyPublisher:
@@ -48,7 +49,7 @@ class MyPublisher:
         i = 0
         tf_list = [self.tare_tf, self.Apple_nom_tf]
         for transform in tf_list:           # iterate through the list of transforms that we need to boadcast
-            print(transform)
+            # print(transform)
             br = TransformBroadcaster()
             transform.child_frame_id = child_id[i]
             br.sendTransform(transform)                     # broadcast it out
@@ -69,8 +70,8 @@ class MyPublisher:
         :return: Nada """
         print("Updating the apple_nom")
         stamp = rospy.Time.now()
-        self.tf_buffer.can_transform('base_link', "test_frame", stamp, rospy.Duration(0.5))
-        self.Apple_nom_tf = self.tf_buffer.lookup_transform('base_link', "test_frame", stamp)
+        self.tf_buffer.can_transform('base_link', "ee_link", stamp, rospy.Duration(0.5))
+        self.Apple_nom_tf = self.tf_buffer.lookup_transform('base_link', "ee_link", stamp)
         return TriggerResponse(success = True, message = "merhhhh")
 
     def update_estimate(self, rpy_msg):  #, act_msg):

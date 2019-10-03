@@ -4,6 +4,7 @@
     <param name="~port" value="/dev/ttyACM0" />
     <param name="~baud" value="57600" />
     <param name="tf2pub" value="tare_tf apple_nom_tf" />
+    <param name="base_frame" value="base_link" />
 
     <node name="test_tf" pkg="tf" type="static_transform_publisher" args="0 0 0.10 0 0 0 1 tool0 test_frame 10"/>
 
@@ -17,6 +18,8 @@
         <arg name="robot_ip" value="$(arg ip)" />
     </include>
 
+    <!--    Run the publisher-->
+    <node name="publisher" pkg="apple_grasper" type="publisher.py" output="screen" />
 
     <node name="freedrive_node" pkg="apple_grasper" type="freedrive_node.py" output="screen" />
     <node name="record_data" pkg="apple_grasper" type="record_data.py" output="screen" />
