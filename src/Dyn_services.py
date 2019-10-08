@@ -32,8 +32,12 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
 
-os.sys.path.append('/home/disch/catkin_ws/src/DynamixelSDK/python/src/dynamixel_sdk')  # Path setting
-from dynamixel_sdk import *
+
+import rospkg
+rospack = rospkg.RosPack()
+package_directory = rospack.get_path('apple_grasper')
+os.sys.path.append(os.path.join(package_directory, 'src', 'DynamixelSDK', 'python', 'src', 'dynamixel_sdk'))
+# from dynamixel_sdk import *
 from port_handler import PortHandler
 from protocol1_packet_handler import Protocol1PacketHandler
 
@@ -443,7 +447,7 @@ def close_hand(request):
     f_close = True
     return TriggerResponse(success=True, message="merhhhh")
 
-def start_up(request):
+def start_up_service(*_, **__):
     """ This sets the global flag that triggers the closeing and grasping of the hand """
     global f_startUp
     print("disabling torque")
@@ -474,6 +478,12 @@ if __name__ == '__main__':
     PH = PortHandler(DEVICENAME)                    # Initialize PortHandler Structs (Leon, 2017)
     PacH = Protocol1PacketHandler()                 # Initialize PacketHandler Structs (leon, 2017)
     rospy.on_shutdown(PH.closePort)                 # close the port when ros is shutting down
+
+    # setup the services
+    open_service = rospy.Service('/open_hand', Trigger, open_hand)
+    close_service = rospy.Service('/close_hand', Trigger, close_hand)
+    shutdown_service = rospy.Service('/shutdown', Trigger, shutdown)
+    init_service = rospy.Service('/enable', Trigger, start_up_service)
 
     start_up()
     rospy.sleep(1)
@@ -511,11 +521,7 @@ if __name__ == '__main__':
 
     rospy.sleep(2)
 
-    # setup the services
-    open_service = rospy.Service('/open_hand', Trigger, open_hand)
-    close_service = rospy.Service('/close_hand', Trigger, close_hand)
-    shutdown_service = rospy.Service('/shutdown', Trigger, shutdown)
-    init_service = rospy.Service('/enable', Trigger, start_up)
+
 
     # Set-up Publisher ISR
     rospy.Timer(rospy.Duration(1), publish_func)            # currently functions at 1 hz

@@ -61,8 +61,8 @@ class MyPublisher:
         :return: Nada """
         print("Updating the tared transfrom")
         stamp = rospy.Time.now()
-        self.tf_buffer.can_transform(self.base_link, "test_frame", stamp, rospy.Duration(0.5))
-        self.tare_tf = self.tf_buffer.lookup_transform(self.base_link, "test_frame", stamp)
+        self.tf_buffer.can_transform(self.base_link, static_imu_frame, stamp, rospy.Duration(0.5))
+        self.tare_tf = self.tf_buffer.lookup_transform(self.base_link, static_imu_frame, stamp)
         return TriggerResponse(success = True, message = "merhhhh")
 
     def set_apple_nom(self, request):
@@ -106,6 +106,7 @@ if __name__ == '__main__':
     my_pub = MyPublisher()
     rate = rospy.Rate(10)
 
+    static_imu_frame = rospy.get_param('static_imu_frame')
     child_id = rospy.get_param('tf2pub').strip().split(' ')
 
     # Services

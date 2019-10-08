@@ -38,6 +38,7 @@ from collections import defaultdict
 from pandas import DataFrame, Series
 from tf.transformations import euler_from_quaternion
 from math import radians
+from rosserial_arduino.srv import Test
 
 import pyquaternion
 import socket
@@ -131,6 +132,11 @@ class SawyerPlanner:
         self.delete_collision_box_srv = rospy.ServiceProxy('delete_collision_box', Empty)
         self.cut_point_srv = rospy.ServiceProxy('cut_point_srv', GetCutPoint)
 
+        self.tare_imu_srv = get_service_proxy_if_exists('/update_tare', Trigger, 5.0)
+        self.init_imu_srv = get_service_proxy_if_exists('/init_IMU', Test, 0.1)
+        self.open_hand_srv = get_service_proxy_if_exists('/open_hand', Trigger, 0.1)
+        self.close_hand_srv = get_service_proxy_if_exists('/close_hand', Trigger, 0.1)
+
         try:
             rospy.wait_for_service('activate_grasp', 0.1)
             self.grasp_srv = rospy.ServiceProxy('activate_grasp', Empty)
@@ -211,10 +217,11 @@ class SawyerPlanner:
         if self.sim:
             rospy.logwarn('Currently in simulation mode, not running freedrive node...')
         else:
-            rospy.loginfo('Please freedrive the arm into the desired position...')
-            rospy.set_param('freedrive', True)
-            raw_input('\n[Press enter to continue]')
-            rospy.set_param('freedrive', False)
+            pass
+            # rospy.loginfo('Please freedrive the arm into the desired position...')
+            # rospy.set_param('freedrive', True)
+            # raw_input('\n[Press enter to continue]')
+            # rospy.set_param('freedrive', False)
 
         current_tf = self.retrieve_tf(self.palm_frame, 'base_link')
 
@@ -240,10 +247,32 @@ class SawyerPlanner:
 
 
 
+    def init_imu(self):
+        if not isinstance(self.init_imu_srv, rospy.ServiceProxy):
+            return
 
+        while True:
+            resp = self.init_imu_srv()
+            if resp:
+                rospy.loginfo('IMU initialized!')
+                return
+            rospy.sleep(0.25)
 
+    def open_hand(self):
+        if not isinstance(self.open_hand_srv, rospy.ServiceProxy):
+            return
 
+        response = False
+        while not response:
+            response = self.open_hand_srv()
 
+    def close_hand(self):
+        if not isinstance(self.close_hand_srv, rospy.ServiceProxy):
+            return
+
+        response = False
+        while not response:
+            response = self.close_hand_srv()
 
 
 
@@ -1543,6 +1572,14 @@ def point_as_array(pt):
 def dummy_function(*_, **__):
     pass
 
+def get_service_proxy_if_exists(srv_name, srv_class, timeout=0.1, warn=True):
+    try:
+        rospy.wait_for_service(srv_name, timeout=timeout)
+        return rospy.ServiceProxy(srv_name, srv_class)
+    except:
+        if warn:
+            rospy.logwarn('Service {} did not exist, replacing with dummy function...'.format(srv_name))
+        return dummy_function
 
 class Logger(object):
     def __init__(self):
@@ -1607,8 +1644,19 @@ class Logger(object):
         return DataFrame(self.log).T.reindex(columns=self.fields)
 
 
+def shutdown_dynamixel(*_, **__):
+
+    # send a service to the dynamixels to disable torque
+    srv = get_service_proxy_if_exists('/shutdown', Trigger, 1.0)
+    if isinstance(srv, rospy.ServiceProxy):
+        response = False
+        while not response:
+            response = srv()
+
 if __name__ == '__main__':
     rospy.init_node('apple_grasping')
+    rospy.on_shutdown(shutdown_dynamixel)
+
     planner = SawyerPlanner(rospy.get_param('sim', True))
     planner.set_home_position()
 
@@ -1642,18 +1690,22 @@ if __name__ == '__main__':
             rospy.logwarn('Servoing error, continuing...')
             continue
 
-        rospy.sleep(1.0)
-        planner.grasp_srv()
+        try:
+            rospy.sleep(1.0)
+            planner.close_hand()
+            rospy.sleep(4.0)
 
-        goal = apple_center + offset / np.linalg.norm(offset) * (planner.apple_diameter / 2 + PULL_DISTANCE)
-        planner.current_goal = goal
-        rez = planner.servo_to_goal(rotate=False, use_visual=False)
-        rospy.sleep(1.0)
-        if rez > 0:
-            rospy.logwarn('Servoing error, continuing...')
-            continue
+            goal = apple_center + offset / np.linalg.norm(offset) * (planner.apple_diameter / 2 + PULL_DISTANCE)
+            planner.current_goal = goal
+            rez = planner.servo_to_goal(rotate=False, use_visual=False)
+            rospy.sleep(1.0)
+            if rez > 0:
+                rospy.logwarn('Servoing error, continuing...')
+                continue
 
+        finally:
+            planner.open_hand()
+            rospy.sleep(4.0)
 
-        planner.grasp_srv()
 
 

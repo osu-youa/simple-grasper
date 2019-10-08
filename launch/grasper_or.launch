@@ -5,6 +5,7 @@
     <arg name="robot" default="ur5" />
     <arg name="use_camera" default="false" />
     <arg name="debug" default="$(arg sim)" />
+    <arg name="use_grasper" default="false" />
 
     <param name="use_camera" value="$(arg use_camera)" />
     <param name="robot_ip" value="$(arg ip)" />
@@ -13,6 +14,14 @@
 
     <param name="apple_diameter" value="0.08" />
     <param name="palm_frame" value="manipulator" />
+
+    <!-- Grasper params -->
+    <param name="~port" value="/dev/ttyACM1" />
+    <param name="~baud" value="57600" />
+    <param name="tf2pub" value="tare_tf apple_nom_tf" />
+    <param name="base_frame" value="base_link" />
+    <param name="static_imu_frame" value="static_imu_tf" />
+
 
     <group unless="$(arg sim)">
         <include file="$(find ur_modern_driver)/launch/ur5e_bringup.launch">
@@ -29,14 +38,8 @@
         </include>
     </group>
     <group if="$(arg use_camera)">
-        <node name="pc_corrector" pkg="sawyer_planner" type="point_cloud_corrector.py" />
         <node name="map_camera_publisher" pkg="tf" type="static_transform_publisher" args="0.0266 0.0475 -0.10 0 0 0 1 or_ee_link camera_link 10" />
         <include file="$(find realsense2_camera)/launch/rs_rgbd.launch" />
-<!--        <include file="$(find rgb_segmentation)/launch/rgb_segmentation.launch" />-->
-<!--        <include file="$(find sawyer_planner)/launch/pcl_filter_nodelet.launch" />-->
-<!--        <node name="background_detector" pkg="sawyer_planner" type="background_detector.py" />-->
-<!--        <node name="point_tracker" pkg="sawyer_planner" type="point_tracker.py" unless="$(arg sim)" output="screen" />-->
-<!--        <node name="branch_orientation" pkg="sawyer_planner" type="branch_orientation.py" />-->
 <!--        <node type="rviz" name="rviz" pkg="rviz" args="-d $(find sawyer_planner)/include/cloud_display.rviz" />-->
         <remap from="image" to="/camera/color/image_raw" />
         <node name="image_display" pkg="image_view" type="image_view" />
@@ -47,8 +50,15 @@
         <node name="map_camera_publisher" pkg="tf" type="static_transform_publisher" args="0.0266 0.0625 -0.10 -0.5 0.5 -0.5 0.5 or_ee_link camera_color_optical_frame 10" />
     </group>
 
+    <group if="$(arg use_grasper)">
+        <node name="static_imu_tf" pkg="tf" type="static_transform_publisher" args="0 0 0.10 0 0 0 1 tool0 static_imu_tf 10"/>
+
+        <node name="publisher" pkg="apple_grasper" type="publisher.py" output="screen" />
+        <node name="rosserial" pkg="rosserial_python" type="serial_node.py" output="screen" />
+        <node name="Hand_controller" pkg="apple_grasper" type="Dyn_services.py" output="screen" />
+    </group>
+
 <!--    <node name="cutpoint_loc_publisher" pkg="tf" type="static_transform_publisher" args="0 -0.0205 -0.045 0 0 0 1 manipulator cutpoint 10" />-->
     <node name="freedrive_node" pkg="sawyer_planner" type="freedrive_node.py" />
 
-<!--    <node name="arduino_communicator" pkg="sawyer_planner" type="arduino_communicator.py" />-->
 </launch>
