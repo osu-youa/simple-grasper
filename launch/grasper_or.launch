@@ -2,10 +2,11 @@
     <!-- Launches some of the base utils needed to get the planner to run -->
     <arg name="sim" default="true" />
     <arg name="ip" default="127.0.0.1" />
-    <arg name="robot" default="ur5" />
+    <arg name="robot" default="ur5_hand" />
     <arg name="use_camera" default="false" />
     <arg name="debug" default="$(arg sim)" />
     <arg name="use_grasper" default="false" />
+    <arg name="record_data" default="false" />
 
     <param name="use_camera" value="$(arg use_camera)" />
     <param name="robot_ip" value="$(arg ip)" />
@@ -58,7 +59,12 @@
         <node name="Hand_controller" pkg="apple_grasper" type="Dyn_services.py" output="screen" />
     </group>
 
-<!--    <node name="cutpoint_loc_publisher" pkg="tf" type="static_transform_publisher" args="0 -0.0205 -0.045 0 0 0 1 manipulator cutpoint 10" />-->
     <node name="freedrive_node" pkg="sawyer_planner" type="freedrive_node.py" />
+
+    <!-- Data collection -->
+    <group if="$(arg record_data)">
+        <node name="data_recorder" pkg="apple_grasper" type="record_data.py" />
+        <node name="wrench_throttler" type="throttle" pkg="topic_tools" args="messages /wrench 10 /throttled_wrench" />
+    </group>
 
 </launch>

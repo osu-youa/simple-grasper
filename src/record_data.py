@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs.msg import WrenchStamped, Vector3Stamped
+from geometry_msgs.msg import WrenchStamped, Vector3Stamped, PoseStamped
 import cPickle
 from collections import defaultdict
 from std_srvs.srv import Empty
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Image, CompressedImage
 import time
 import os
 import datetime
 import pyrealsense2 as rs
+import rospkg
 
 RECORDING = False
 
@@ -25,9 +26,8 @@ def stop_recording(*_, **__):
     # pipeline.stop()                 # stop recording RS_camera
 
     # Create file path
-    formatted_ts = datetime.datetime.now().strftime("%Y.%m.%d:%H.%M")
-    file_name = 'catkin_ws/src/simple-grasper/Data/grasper_{}.pickle'.format(formatted_ts)
-    root = os.path.expanduser('~')
+    formatted_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = 'grasper_{}.pickle'.format(formatted_ts)
     path = os.path.join(root, file_name)
 
     # Save file
@@ -67,6 +67,10 @@ def create_subscriber_handler(name):
 
 if __name__ == '__main__':
     rospy.init_node('record_data')
+
+    rospack = rospkg.RosPack()
+    root = os.path.join(rospack.get_path('apple_grasper'), 'data')
+
     a = rospy.Service('start_recording', Empty, start_recording)
     b = rospy.Service('stop_recording', Empty, stop_recording)
 
@@ -87,8 +91,9 @@ if __name__ == '__main__':
 
     # Add your interesting topics here
     # TODO: You may consider throttling these topics (i.e. creating a throttled version of the node and subscribing to the throttled node)
-    add_subscriber('wrench', WrenchStamped)                 # 3 linear force and 3 torques
-    add_subscriber('joint_states', JointState)
-    add_subscriber('rpy_data', Vector3Stamped)
+    add_subscriber('/wrench', WrenchStamped)                 # 3 linear force and 3 torques
+    add_subscriber('/camera/color/image_raw/compressed', CompressedImage)
+    add_subscriber('/manipulator_pose', PoseStamped)
+    # add_subscriber('rpy_data', Vector3Stamped)
 
     rospy.spin()

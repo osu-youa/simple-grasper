@@ -443,7 +443,7 @@ def open_hand(request):
 def close_hand(request):
     """ This sets the global flag that triggers the closeing and grasping of the hand """
     global f_close
-    print("Open the hand")
+    print("Close the hand")
     f_close = True
     return TriggerResponse(success=True, message="merhhhh")
 
@@ -526,11 +526,17 @@ if __name__ == '__main__':
     # Set-up Publisher ISR
     rospy.Timer(rospy.Duration(1), publish_func)            # currently functions at 1 hz
 
+    rospy.loginfo('Hand controller loop entered!')
+
     while not rospy.is_shutdown():
         if f_open:              # set to true when there was a service call to open the hand
             ID_1.runTorque(tor_array[0], vel_array_back[0])
             ID_2.runTorque(tor_array[1], vel_array_back[1])
             ID_4.runTorque(tor_array[3], vel_array_back[3])
+            rospy.sleep(5)
+            ID_1.runTorque(tor_array[0], 0)
+            ID_2.runTorque(tor_array[1], 0)
+            ID_4.runTorque(tor_array[3], 0)
             f_open = False
 
         if f_close:             # close the hand

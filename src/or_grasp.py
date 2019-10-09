@@ -132,10 +132,13 @@ class SawyerPlanner:
         self.delete_collision_box_srv = rospy.ServiceProxy('delete_collision_box', Empty)
         self.cut_point_srv = rospy.ServiceProxy('cut_point_srv', GetCutPoint)
 
-        self.tare_imu_srv = get_service_proxy_if_exists('/update_tare', Trigger, 5.0)
+        self.tare_imu_srv = get_service_proxy_if_exists('/update_tare', Trigger, 0.1)
         self.init_imu_srv = get_service_proxy_if_exists('/init_IMU', Test, 0.1)
         self.open_hand_srv = get_service_proxy_if_exists('/open_hand', Trigger, 0.1)
         self.close_hand_srv = get_service_proxy_if_exists('/close_hand', Trigger, 0.1)
+
+        self.start_recording_srv = get_service_proxy_if_exists('/start_recording', Empty, 0.1)
+        self.stop_recording_srv = get_service_proxy_if_exists('/stop_recording', Empty, 0.1)
 
         try:
             rospy.wait_for_service('activate_grasp', 0.1)
@@ -146,15 +149,6 @@ class SawyerPlanner:
         self.load_octomap = rospy.ServiceProxy('/load_octomap', LoadOctomap)
         self.update_octomap = rospy.ServiceProxy('/update_octomap', Empty)
         self.update_octomap_filtered = rospy.ServiceProxy('/update_octomap_filtered', Empty)
-
-        if self.use_camera and not self.target_color:
-            self.activate_point_tracker = rospy.ServiceProxy('/activate_point_tracker', Empty)
-            self.deactivate_point_tracker = rospy.ServiceProxy('/deactivate_point_tracker', Empty)
-            self.point_tracker_set_goal = rospy.ServiceProxy('point_tracker_set_goal', SetGoal)
-        else:
-            self.activate_point_tracker = dummy_function
-            self.deactivate_point_tracker = dummy_function
-            self.point_tracker_set_goal = dummy_function
 
         # self.enable_bridge_pub.publish(Bool(True))
         self.tf_buffer = Buffer()
@@ -679,9 +673,6 @@ class SawyerPlanner:
             else:
                 self.current_goal = self.current_goal_array
 
-            # Send the goal to the point tracker to output diagnostic information
-            self.point_tracker_set_goal(self.goals[self.current_sequence_index])
-
             # Draw the branch and cut point onto the OpenRAVE simulation
             self.results_dict['Num Apples'] += 1
             self.failures_dict['Grasp Misalignment'].append(0)
@@ -760,7 +751,6 @@ class SawyerPlanner:
             try:
                 status = self.servo_to_goal()
             finally:
-                self.deactivate_point_tracker()
                 self.stop_arm()
                 rospy.set_param('/going_to_goal', False)
             elapsed_time = self.logger.end_timer('servoing_time')
@@ -1128,10 +1118,6 @@ class SawyerPlanner:
 
         rospy.loginfo("Servoing to goal: {:.3f}, {:.3f}, {:.3f}".format(*goal))
 
-        if use_visual:
-            # TODO: A bit hacky, service requires PlannerGoal point, but self.current_goal can be numpy array which differs from PlannerGoal
-            self.activate_point_tracker()
-
         # Computes position of arm relative to goal so that we can know when we've moved past goal
         starting_ee_goal_vector = (np.array(goal) - self.ee_position)[:2]
 
@@ -1157,17 +1143,6 @@ class SawyerPlanner:
 
             draw_point_msg = Point(*goal)
             self.draw_point_pub.publish(draw_point_msg)
-
-            # if numpy.linalg.norm(self.ee_position - self.current_goal) < self.stop_update_threshold:
-            #     # rospy.loginfo_throttle(1.0, "disabling updating of apple position because too close")
-            #     rotate = False
-            #     self.deactivate_point_tracker()
-            #     rospy.loginfo_throttle(5, 'Point tracking disabled!')
-            #     if not self.sim:
-            #         self.enable_bridge_pub.publish(Bool(False))
-            # else:
-            #     if not self.sim:
-            #         self.enable_bridge_pub.publish(Bool(True))
 
             if not self.is_in_joint_limits():
                 return 1
@@ -1201,7 +1176,6 @@ class SawyerPlanner:
 
         rospy.loginfo('Servoing complete! Stopping arm...')
 
-        self.deactivate_point_tracker()
         self.stop_arm()
 
         if self.sim:
@@ -1223,7 +1197,7 @@ class SawyerPlanner:
                 # print ("CMD: " + cmd)
                 self.s.send(cmd)
 
-    def get_goal_approach_pose(self, goal, offset, angle, orientation_reference=None):
+    def get_goal_approach_pose(self, goal, offset, angle, orientation_reference=None, elevation=0.0):
 
         if orientation_reference is not None:
 
@@ -1240,7 +1214,8 @@ class SawyerPlanner:
             up_axis = [0, 0, -1]
 
         goal = np.array(goal)
-        view_offset = np.array([offset * math.cos(angle), offset * math.sin(angle), 0.0])
+        view_offset = np.array([math.cos(angle), math.sin(angle), math.sin(elevation) ])
+        view_offset = view_offset / np.linalg.norm(view_offset) * offset
 
         goal_off_pose_mat = openravepy.transformLookat(goal, goal + view_offset, up_axis)
         goal_off_pose = openravepy.poseFromMatrix(goal_off_pose_mat)
@@ -1658,9 +1633,12 @@ if __name__ == '__main__':
     rospy.on_shutdown(shutdown_dynamixel)
 
     planner = SawyerPlanner(rospy.get_param('sim', True))
+    if not rospy.get_param('sim', True):
+        planner.apple_diameter = float(raw_input('Please enter the apple diameter in cm').strip()) / 100.0
     planner.set_home_position()
 
     PULL_DISTANCE = 0.01
+    HAND_CLOSE_DELAY = 4.0
 
     # Testing stuff
 
@@ -1668,16 +1646,28 @@ if __name__ == '__main__':
     approach_angles = np.linspace(-np.pi/6, np.pi/6, 3, endpoint=True) + base_angle
     apple_center = point_as_array(planner.apple_center)
 
-    for angle in approach_angles:
+    angle_elev_configs = [
+        (-np.pi / 6, 0),
+        (np.pi / 6, 0),
+        (0, np.pi / 6),
+        (0, -np.pi / 6),
+        (0, 0)
+    ]
+
+    for angle_dev, elev in angle_elev_configs:
+
+        angle = base_angle + angle_dev
 
         raw_input('Hit Enter for next move...')
 
-        _, pose, _ = planner.get_goal_approach_pose(apple_center, planner.apple_diameter / 2 + 0.02, angle)
+        _, pose, _ = planner.get_goal_approach_pose(apple_center, planner.apple_diameter / 2 + 0.02, angle, elevation=elev)
         success, _, _ = planner.plan_to_goal(planner.pose_to_ros_msg(pose))
 
         if not success:
             rospy.logwarn('Couldn\'t plan to desired pose, continuing...')
             continue
+
+        planner.start_recording_srv()
 
         rospy.sleep(1.0)
         current_pos = planner.ee_position
@@ -1691,9 +1681,8 @@ if __name__ == '__main__':
             continue
 
         try:
-            rospy.sleep(1.0)
             planner.close_hand()
-            rospy.sleep(4.0)
+            rospy.sleep(HAND_CLOSE_DELAY)
 
             goal = apple_center + offset / np.linalg.norm(offset) * (planner.apple_diameter / 2 + PULL_DISTANCE)
             planner.current_goal = goal
@@ -1706,6 +1695,7 @@ if __name__ == '__main__':
         finally:
             planner.open_hand()
             rospy.sleep(4.0)
+            planner.stop_recording_srv()
 
 
 
