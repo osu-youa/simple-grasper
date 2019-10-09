@@ -12,6 +12,7 @@ import datetime
 import pyrealsense2 as rs
 import rospkg
 
+
 RECORDING = False
 
 ALL_DATA = defaultdict(list)
@@ -73,21 +74,6 @@ if __name__ == '__main__':
 
     a = rospy.Service('start_recording', Empty, start_recording)
     b = rospy.Service('stop_recording', Empty, stop_recording)
-
-    #Configure the RealSense Camera recording data
-    # Configure depth and color streams
-    # pipeline = rs.pipeline()  # for recording rs-camera data
-    # config = rs.config()
-    # config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    # config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-    #
-    # # Create file path
-    # formatted_ts = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-    # file_name = 'catkin_ws/src/simple-grasper/Data rs_{}.bag'.format(formatted_ts)
-    # root = os.path.expanduser('~')
-    # path = os.path.join(root, file_name)
-    #
-    # config.enable_record_to_file(path)
 
     # Add your interesting topics here
     # TODO: You may consider throttling these topics (i.e. creating a throttled version of the node and subscribing to the throttled node)
