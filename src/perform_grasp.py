@@ -22,7 +22,6 @@ from std_srvs.srv import Trigger, TriggerRequest
 import UR5Motion_functions as UR5
 from publisher import MyPublisher
 from copy import deepcopy
-
 ERROR = 0
 
 # Config - These define the motion to be completed. You can modify this, but if you want multiple options, you may
@@ -260,7 +259,7 @@ def issue_stop():
 
 def Move2Tare():
     # move to the tare position
-    tare_pose = Pose(Point(0.45, 0.3, 0.6), Quaternion(0, 0, 0, 1))
+    tare_pose = Pose(Point(0.6, 0.3, 0.6), Quaternion(-0.2227, 0.4455, 0.4464, 0.7434))
     cmd = UR5.generate_move_command(tare_pose, 1.0, 0.25)
     urscript_pub.publish(cmd)
     UR5.wait_for_motion_to_complete()
@@ -399,13 +398,21 @@ if __name__ == '__main__':
 
     # Initialization stuff - subscribers, publishers, service proxies, action clients
     rospy.init_node('move_arm')
+
+    # Move to the Tare position
+    urscript_pub = rospy.Publisher('/ur_driver/URScript', String, queue_size=1)
+    print("moving to tare position")
+    rospy.sleep(1.0)
+    Move2Tare()
+    rospy.sleep(2)
+
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer)
     my_pub_data = MyPublisher()
     rospy.on_shutdown(Shutdown)
 
     rospy.Subscriber('/ur_driver/robot_status', RobotStatus, UR5.update_error, queue_size=1)
-    urscript_pub = rospy.Publisher('/ur_driver/URScript', String, queue_size=1)
+
     traj_client = actionlib.SimpleActionClient('follow_joint_trajectory', FollowJointTrajectoryAction)
 
     if not traj_client.wait_for_server(rospy.Duration(5.0)):
@@ -417,11 +424,6 @@ if __name__ == '__main__':
     start_recording = rospy.ServiceProxy('start_recording', Empty, persistent=True)
     stop_recording = rospy.ServiceProxy('stop_recording', Empty, persistent=True)
 
-    # Move to the Tare position
-    print("moving to tare position")
-    rospy.sleep(1.0)
-    Move2Tare()
-    rospy.sleep(2)
 
     # signal for the service to update the Tare_tf
     rospy.wait_for_service('/update_tare')

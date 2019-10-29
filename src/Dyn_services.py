@@ -98,7 +98,7 @@ pos_array = [2500, 1000, 0, 0]          # desired finger final positions
 
 # for 0-1,023, CCW torque is applied; for 1,024 ~ 2,047, CW torque is applied. Setting it to 0 or 1,024 will stop.
 vel_array = [200, 200, 200, 200]            # desired finger speed; will increase torque to try to maintain that speed
-tor_array = [100, 100, 100, 100]            # desired finger torques, x/1023 is the percentage of max set torque to run
+tor_array = [200, 200, 200, 200]            # desired finger torques, x/1023 is the percentage of max set torque to run
 vel_array_back = [1324, 1324, 1324, 1324]   # Used to open the hand back up, this is the sae speed as before, just in the op. direction
 torque_run_time = 1                    # run time duration to run at those torques
 
@@ -201,8 +201,8 @@ class Dynamixel_servo():
         return None
 
     def Finger_Reset(self):                 # Reset to original position
-        global DXL_MINIMUM_POSITION_VALUE
-        self.Move(DXL_MINIMUM_POSITION_VALUE)
+        # global DXL_MINIMUM_POSITION_VALUE
+        self.Move(2500)
         val = 0
         while not val:
             val = self.PresentPos_finger()
@@ -530,19 +530,24 @@ if __name__ == '__main__':
 
     while not rospy.is_shutdown():
         if f_open:              # set to true when there was a service call to open the hand
+            rospy.loginfo('Open request received')
             ID_1.runTorque(tor_array[0], vel_array_back[0])
             ID_2.runTorque(tor_array[1], vel_array_back[1])
             ID_4.runTorque(tor_array[3], vel_array_back[3])
-            rospy.sleep(5)
-            ID_1.runTorque(tor_array[0], 0)
-            ID_2.runTorque(tor_array[1], 0)
-            ID_4.runTorque(tor_array[3], 0)
+
+            rospy.sleep(1.25)
+            rospy.loginfo('Opening complete, setting velocities to 0')
             f_open = False
 
         if f_close:             # close the hand
             ID_1.runTorque(tor_array[0], vel_array[0])
             ID_2.runTorque(tor_array[1], vel_array[1])
             ID_4.runTorque(tor_array[3], vel_array[3])
+
+        if not (f_close or f_open):
+            ID_1.runTorque(tor_array[0], 0)
+            ID_2.runTorque(tor_array[1], 0)
+            ID_4.runTorque(tor_array[3], 0)
 
         if f_startUp:
             # End each servo torque

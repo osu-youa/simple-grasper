@@ -1634,11 +1634,13 @@ if __name__ == '__main__':
 
     planner = SawyerPlanner(rospy.get_param('sim', True))
     if not rospy.get_param('sim', True):
-        planner.apple_diameter = float(raw_input('Please enter the apple diameter in cm').strip()) / 100.0
+        planner.apple_diameter = float(raw_input('Please enter the apple diameter in cm: ').strip()) / 100.0
     planner.set_home_position()
+    planner.init_imu()
 
     PULL_DISTANCE = 0.01
     HAND_CLOSE_DELAY = 4.0
+    APPROACH_DIST = 0.05
 
     # Testing stuff
 
@@ -1660,7 +1662,9 @@ if __name__ == '__main__':
 
         raw_input('Hit Enter for next move...')
 
-        _, pose, _ = planner.get_goal_approach_pose(apple_center, planner.apple_diameter / 2 + 0.02, angle, elevation=elev)
+        vertical_ref = apple_center + np.array([0, 0, 0.05])
+        _, pose, _ = planner.get_goal_approach_pose(apple_center, planner.apple_diameter / 2 + APPROACH_DIST, angle,
+                                                    orientation_reference=vertical_ref, elevation=elev)
         success, _, _ = planner.plan_to_goal(planner.pose_to_ros_msg(pose))
 
         if not success:
@@ -1694,8 +1698,11 @@ if __name__ == '__main__':
 
         finally:
             planner.open_hand()
-            rospy.sleep(4.0)
+            rospy.sleep(2.0)
             planner.stop_recording_srv()
+            raw_input('Make sure hand is open...')
+            planner.plan_to_goal(planner.pose_to_ros_msg(pose))
 
+    planner.go_to_start()
 
 

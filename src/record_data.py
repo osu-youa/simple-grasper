@@ -80,6 +80,12 @@ if __name__ == '__main__':
     add_subscriber('/wrench', WrenchStamped)                 # 3 linear force and 3 torques
     add_subscriber('/camera/color/image_raw/compressed', CompressedImage)
     add_subscriber('/manipulator_pose', PoseStamped)
-    # add_subscriber('rpy_data', Vector3Stamped)
+    add_subscriber('/raw_accel', Vector3Stamped)
+    add_subscriber('/raw_gyro', Vector3Stamped)
+    add_subscriber('/raw_mag', Vector3Stamped)
+    add_subscriber('/rpy_data', Vector3Stamped)
+    add_subscriber('/dyn_Load', Vector3Stamped)
+    add_subscriber('/dyn_position', Vector3Stamped)
+    add_subscriber('/dyn_RPM', Vector3Stamped)
 
     rospy.spin()
